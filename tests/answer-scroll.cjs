@@ -1,0 +1,14 @@
+const fs=require('fs'),assert=require('node:assert/strict'),vm=require('vm'),ts=require('typescript');
+const source=fs.readFileSync('app/chat/[id]/page.tsx','utf8');
+const start=source.indexOf('    const state = scrollState.current;\n    const last = messages.at(-1);');
+const end=source.indexOf('\n  }, [messages, isLoading]);',start);
+assert(start>0&&end>start);
+const code=ts.transpileModule(source.slice(start,end),{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+const state={current:{last:0,follow:true,answerStarted:false,awaitingAnswer:true}};
+const el={scrollTop:100,scrollHeight:2000,getBoundingClientRect:()=>({top:0}),querySelectorAll:()=>[{getBoundingClientRect:()=>({top:500})}]};
+const run=(loading=true)=>vm.runInNewContext(code,{scrollState:state,el,messages:[{role:'assistant'}],isLoading:loading,getComputedStyle:()=>({paddingTop:'84'})});
+run();assert.equal(el.scrollTop,516);assert(state.current.answerStarted);
+el.scrollTop=600;state.current.follow=true;run();assert.equal(el.scrollTop,600);run(false);assert.equal(el.scrollTop,600);
+state.current.answerStarted=false;state.current.awaitingAnswer=true;run();assert.equal(el.scrollTop,1016);
+const component=fs.readFileSync('components/ChatMessagesView.tsx','utf8');assert.equal(component.split('data-answer-start=').length-1,2);assert.equal(component.split("minHeight: 'var(--answer-space, 0px)'").length-1,2);
+console.log('PASS initial answer alignment with mobile inset, no streaming/completion scroll override, next reply realignment, chat/novel spacer wiring');

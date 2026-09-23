@@ -1,0 +1,13 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm'),ts=require('typescript');
+const api={};vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/media-layout.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS}}).outputText,{exports:api});
+assert.equal(api.parseMediaFilename(' 에리_기쁨.jpg').category,'에리');
+assert.equal(api.parseMediaFilename('에리_기쁨_크게.webp').situation,'기쁨_크게');
+assert.equal(api.parseMediaFilename('사장실.png').situation,'일반');
+const items=[{name:'에리_기쁨.jpg'},{name:'다인_기쁨.jpg'},{name:'에리_걱정.png'},{name:'에리_기쁨.webp'},{name:'old.jpg',category:'수정분류',situation:'수정상황'}];
+const m=api.mediaMatrix(items);
+assert.equal(m.categories.join(','),'에리,다인,수정분류');
+assert.equal(m.situations.join(','),'기쁨,걱정,수정상황');
+assert.equal(m.cells.get('에리').get('기쁨').length,2);
+assert.equal(m.cells.get('다인').get('걱정'),undefined);
+assert.equal(api.mediaMatrix([]).categories.length,0);
+console.log('PASS: filename parsing, category columns/situation rows, duplicates preserved, manual labels retained, empty cells.');

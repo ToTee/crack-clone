@@ -1,0 +1,45 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+const ts = require('typescript');
+const db = new (require('better-sqlite3'))(':memory:');
+db.exec(`CREATE TABLE characters(id TEXT PRIMARY KEY,name TEXT,tagline TEXT,avatar TEXT,system_prompt TEXT,first_message TEXT,tags TEXT,start_settings TEXT,editor_config TEXT);`);
+const cache=new Map();
+function load(file){
+ const full=path.resolve(__dirname,'..',file);if(cache.has(full))return cache.get(full);
+ const exports={};cache.set(full,exports);
+ const code=ts.transpileModule(fs.readFileSync(full,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,esModuleInterop:true}}).outputText;
+ vm.runInNewContext(code,{exports,require:(n)=>n==='@/lib/db'?db:n.startsWith('@/')?load(n.slice(2)+'.ts'):require(n),Buffer,URL,Response,console});return exports;
+}
+const media=load('lib/server-media.ts');
+const transfer=load('lib/work-transfer.ts');
+const config={version:1,prompt:'설정',template:'custom',registration:{visibility:'public'},keywordNotes:[{info:'기억',keywords:['기억']}]};
+db.prepare('INSERT INTO characters VALUES (?,?,?,?,?,?,?,?,?)').run('original','작품','소개','data:image/png;base64,YQ==','세계관','{{media:m1}}','스토리','[{"name":"기본","prologue":"시작"}]',JSON.stringify(config));
+media.writeMedia('original',[{id:'m1',name:'가희_미소.png',category:'가희',situation:'미소',hint:'반가움',targetScope:'all',url:'data:image/png;base64,YQ=='}],0);
+const file=JSON.parse(JSON.stringify(transfer.exportWork('original')));
+assert.equal(file.format,'crack-clone-work');
+assert(!('id' in file.work));
+const a=transfer.importWork(file),b=transfer.importWork(file);
+assert.notEqual(a.id,b.id);assert.notEqual(a.id,'original');
+const copy=transfer.exportWork(a.id);
+assert.equal(copy.work.system_prompt,file.work.system_prompt);
+assert.equal(copy.work.first_message,file.work.first_message);
+assert.equal(copy.work.start_settings,file.work.start_settings);
+assert.equal(JSON.stringify(copy.media),JSON.stringify(file.media));
+assert.deepEqual(JSON.parse(copy.work.editor_config).keywordNotes,config.keywordNotes);
+assert.equal(JSON.parse(copy.work.editor_config).registration.visibility,'private');
+assert.equal(JSON.parse(transfer.exportWork('original').work.editor_config).registration.visibility,'public');
+assert.throws(()=>transfer.importWork({...file,version:2}));
+assert.throws(()=>transfer.importWork({...file,media:[...file.media,...file.media]}));
+assert.throws(()=>transfer.importWork({...file,work:{...file.work,start_settings:'{}'}}));
+assert.equal(db.prepare('SELECT COUNT(*) AS n FROM characters').get().n,3);
+assert.equal(transfer.exportWork('missing'),null);
+(async()=>{
+ const api=load('app/api/characters/transfer/route.ts');
+ const result=await api.GET(new Request('http://localhost/api/characters/transfer?id=original'));
+ assert.equal(result.status,200);assert.match(result.headers.get('content-disposition'),/attachment/);
+ const imported=await api.POST(new Request('http://localhost/api/characters/transfer',{method:'POST',body:await result.text()}));assert.equal(imported.status,200);
+ assert.equal((await api.POST(new Request('http://localhost/api/characters/transfer',{method:'POST',body:'bad'}))).status,400);
+ console.log('PASS work export/import round trip, images, keywords, distinct copies, original preservation, invalid files and API download');
+})().catch(e=>{console.error(e);process.exitCode=1});

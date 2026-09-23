@@ -1,0 +1,6 @@
+﻿node_modules
+.next
+crack.db
+.git
+.env
+.env.*

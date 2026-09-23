@@ -1,0 +1,12 @@
+node_modules
+.next
+crack.db
+.git
+.env
+.env.*
+
+# NAS metadata must never become Next.js routes
+**/@eaDir
+**/@eaDir/**
+# Persistent application data is mounted at runtime
+data
